@@ -1,6 +1,10 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
+from sqlalchemy.orm import relationship, sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
+from pydantic import BaseModel
+from fastapi import FastAPI, Depends, HTTPException
+from dotenv import load_dotenv
+import os
 
 Base = declarative_base()
 
@@ -25,9 +29,6 @@ class ObrigacaoAcessoria(Base):
     empresa_id = Column(Integer, ForeignKey("empresas.id"))
 
     empresa = relationship("Empresa", back_populates="obrigacoes")
-
-
-  from pydantic import BaseModel
 
 class EmpresaCreate(BaseModel):
     nome: str
@@ -54,13 +55,12 @@ class ObrigacaoAcessoria(ObrigacaoAcessoriaCreate):
     class Config:
         orm_mode = True
 
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-        from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-from . import models, schemas
-from .database import SessionLocal, engine
-
-models.Base.metadata.create_all(bind=engine)
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
@@ -71,44 +71,26 @@ def get_db():
     finally:
         db.close()
 
-@app.post("/empresas/", response_model=schemas.Empresa)
-def criar_empresa(empresa: schemas.EmpresaCreate, db: Depends(get_db)):
-    db_empresa = models.Empresa(**empresa.dict())
+@app.post("/empresas/", response_model=Empresa)
+def criar_empresa(empresa: EmpresaCreate, db: Session = Depends(get_db)):
+    db_empresa = Empresa(**empresa.dict())
     db.add(db_empresa)
     db.commit()
     db.refresh(db_empresa)
     return db_empresa
 
-@app.get("/empresas/", response_model=list[schemas.Empresa])
-def listar_empresas(db: Depends(get_db)):
-    return db.query(models.Empresa).all()
+@app.get("/empresas/", response_model=list[Empresa])
+def listar_empresas(db: Session = Depends(get_db)):
+    return db.query(Empresa).all()
 
-@app.post("/obrigacoes/", response_model=schemas.ObrigacaoAcessoria)
-def criar_obrigacao(
-    obrigacao: schemas.ObrigacaoAcessoriaCreate, empresa_id: int, db: Depends(get_db)
-):
-    db_obrigacao = models.ObrigacaoAcessoria(**obrigacao.dict(), empresa_id=empresa_id)
+@app.post("/obrigacoes/", response_model=ObrigacaoAcessoria)
+def criar_obrigacao(obrigacao: ObrigacaoAcessoriaCreate, empresa_id: int, db: Session = Depends(get_db)):
+    db_obrigacao = ObrigacaoAcessoria(**obrigacao.dict(), empresa_id=empresa_id)
     db.add(db_obrigacao)
     db.commit()
     db.refresh(db_obrigacao)
     return db_obrigacao
 
-@app.get("/obrigacoes/", response_model=list[schemas.ObrigacaoAcessoria])
-def listar_obrigacoes(db: Depends(get_db)):
-    return db.query(models.ObrigacaoAcessoria).all()
-
-
-#DATABASE_URL=postgresql://usuario:senha@host:porta/nomedobanco
-
-
-  from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+@app.get("/obrigacoes/", response_model=list[ObrigacaoAcessoria])
+def listar_obrigacoes(db: Session = Depends(get_db)):
+    return db.query(ObrigacaoAcessoria).all()
